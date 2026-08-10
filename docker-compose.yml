@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: collecttrack-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: collecttrack
+      POSTGRES_PASSWORD: collecttrack_dev
+      POSTGRES_DB: collecttrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U collecttrack"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: collecttrack-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgres://collecttrack:collecttrack_dev@db:5432/collecttrack
+      GOOGLE_APPLICATION_CREDENTIALS: /app/serviceAccountKey.json
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/serviceAccountKey.json:/app/serviceAccountKey.json:ro
+
+  frontend:
+    build: ./frontend
+    container_name: collecttrack-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/src:/app/src
+
+volumes:
+  db_data:
