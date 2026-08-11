@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const { pool } = require("./db");
 const { requireAuth } = require("./authMiddleware");
+const { searchMtg, searchPokemon, searchYugioh } = require("./cardSearch");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -70,6 +71,30 @@ app.post("/api/auth/sync", requireAuth, async (req, res) => {
     }
     console.error("Auth sync failed:", err.message);
     res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// Card search across MTG, Pokémon, and Yu-Gi-Oh! (FR-2). Requires login.
+app.get("/api/cards/search", requireAuth, async (req, res) => {
+  const { game, q } = req.query;
+
+  if (!game || !q) {
+    return res
+      .status(400)
+      .json({ status: "error", message: "Both 'game' and 'q' query params are required" });
+  }
+
+  try {
+    let results;
+    if (game === "mtg") results = await searchMtg(q);
+    else if (game === "pokemon") results = await searchPokemon(q);
+    else if (game === "yugioh") results = await searchYugioh(q);
+    else return res.status(400).json({ status: "error", message: "game must be mtg, pokemon, or yugioh" });
+
+    res.json({ status: "ok", game, query: q, results });
+  } catch (err) {
+    console.error("Card search failed:", err.message);
+    res.status(502).json({ status: "error", message: err.message });
   }
 });
 

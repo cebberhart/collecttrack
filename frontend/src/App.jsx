@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 import AuthForm from "./AuthForm";
+import CardSearch from "./CardSearch";
 
 const API_BASE = "http://localhost:3001";
 
@@ -45,6 +46,7 @@ function Dashboard() {
       <button onClick={logout} style={{ padding: "0.5rem 1rem" }}>
         Log out
       </button>
+      <CardSearch />
     </div>
   );
 }
