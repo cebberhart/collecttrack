@@ -3,7 +3,7 @@ import { useAuth } from "./AuthContext";
 
 const API_BASE = "http://localhost:3001";
 
-function CardSearch() {
+function CardSearch({ onAdd }) {
   const { getToken } = useAuth();
   const [game, setGame] = useState("mtg");
   const [query, setQuery] = useState("");
@@ -71,6 +71,9 @@ function CardSearch() {
               <br />
               {card.set}
             </p>
+            <button onClick={() => onAdd(card, game)} style={{ width: "100%", marginTop: "0.25rem" }}>
+              + Add to collection
+            </button>
           </div>
         ))}
       </div>

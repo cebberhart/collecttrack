@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 import AuthForm from "./AuthForm";
 import CardSearch from "./CardSearch";
+import CollectionList from "./CollectionList";
 
 const API_BASE = "http://localhost:3001";
 
@@ -9,6 +10,8 @@ function Dashboard() {
   const { user, logout, getToken } = useAuth();
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
+  const [collection, setCollection] = useState([]);
+  const [collectionError, setCollectionError] = useState("");
 
   useEffect(() => {
     const syncProfile = async () => {
@@ -31,6 +34,80 @@ function Dashboard() {
     syncProfile();
   }, [getToken]);
 
+  const fetchCollection = async () => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/api/collections/mine`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Fetch failed (${res.status})`);
+      setCollection(await res.json());
+    } catch (err) {
+      setCollectionError(err.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchCollection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleAdd = async (card, game) => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/api/collections`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          game,
+          card_id: card.id,
+          card_name: card.name,
+          quantity: 1,
+        }),
+      });
+      if (!res.ok) throw new Error(`Add failed (${res.status})`);
+      await fetchCollection();
+    } catch (err) {
+      setCollectionError(err.message);
+    }
+  };
+
+  const handleUpdateQuantity = async (id, quantity) => {
+    if (quantity < 1) return;
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/api/collections/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ quantity }),
+      });
+      if (!res.ok) throw new Error(`Update failed (${res.status})`);
+      await fetchCollection();
+    } catch (err) {
+      setCollectionError(err.message);
+    }
+  };
+
+  const handleRemove = async (id) => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/api/collections/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok && res.status !== 204) throw new Error(`Remove failed (${res.status})`);
+      await fetchCollection();
+    } catch (err) {
+      setCollectionError(err.message);
+    }
+  };
+
   return (
     <div style={{ fontFamily: "sans-serif", padding: "2rem" }}>
       <h1>CollectTrack</h1>
@@ -46,7 +123,15 @@ function Dashboard() {
       <button onClick={logout} style={{ padding: "0.5rem 1rem" }}>
         Log out
       </button>
-      <CardSearch />
+
+      <CardSearch onAdd={handleAdd} />
+
+      {collectionError && <p style={{ color: "crimson" }}>{collectionError}</p>}
+      <CollectionList
+        collection={collection}
+        onUpdateQuantity={handleUpdateQuantity}
+        onRemove={handleRemove}
+      />
     </div>
   );
 }

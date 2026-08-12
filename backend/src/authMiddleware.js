@@ -1,4 +1,5 @@
 const { admin } = require("./firebaseAdmin");
+const { pool } = require("./db");
 
 // Verifies the "Authorization: Bearer <idToken>" header and attaches the
 // decoded Firebase token (uid, email, etc.) to req.firebaseUser
@@ -27,4 +28,23 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireAdmin };
+// Use after requireAuth. Looks up the app-side users row for this Firebase
+// account and attaches it as req.appUser (gives access to id, role, etc.)
+async function attachAppUser(req, res, next) {
+  try {
+    const result = await pool.query(
+      "SELECT id, firebase_uid, email, display_name, role FROM users WHERE firebase_uid = $1",
+      [req.firebaseUser.uid]
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ status: "error", message: "No app user found — call /api/auth/sync first" });
+    }
+    req.appUser = result.rows[0];
+    next();
+  } catch (err) {
+    console.error("attachAppUser failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+}
+
+module.exports = { requireAuth, requireAdmin, attachAppUser };
