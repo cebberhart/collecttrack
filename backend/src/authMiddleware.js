@@ -2,7 +2,7 @@ const { admin } = require("./firebaseAdmin");
 const { pool } = require("./db");
 
 // Verifies the "Authorization: Bearer <idToken>" header and attaches the
-// decoded Firebase token (uid, email, etc.) to req.firebaseUser
+// decoded Firebase token to req.firebaseUser
 async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -29,7 +29,7 @@ function requireAdmin(req, res, next) {
 }
 
 // Use after requireAuth. Looks up the app-side users row for this Firebase
-// account and attaches it as req.appUser (gives access to id, role, etc.)
+// account and attaches it as req.appUser
 async function attachAppUser(req, res, next) {
   try {
     const result = await pool.query(

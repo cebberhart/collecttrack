@@ -1,7 +1,7 @@
 const admin = require("firebase-admin");
 
 // GOOGLE_APPLICATION_CREDENTIALS points at the service account JSON key
-// (see backend/serviceAccountKey.json — gitignored, never commit this file)
+// that has been created in the Firebase console for this project.
 admin.initializeApp({
   credential: admin.credential.applicationDefault(),
 });

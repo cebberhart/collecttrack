@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Basic health check — confirms the API container is up
+// Basic health check endpoint to confirm the backend is running
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "collecttrack-backend" });
 });
@@ -104,7 +104,7 @@ app.get("/api/cards/search", requireAuth, async (req, res) => {
   }
 });
 
-// Returns the logged-in user's own collection (FR-4: manage collection).
+// Returns the logged-in user's own collection.
 app.get("/api/collections/mine", requireAuth, attachAppUser, async (req, res) => {
   try {
     const result = await pool.query(
@@ -118,8 +118,8 @@ app.get("/api/collections/mine", requireAuth, attachAppUser, async (req, res) =>
   }
 });
 
-// Adds a card to the logged-in user's collection (FR-3). If the same card
-// (same condition/foil) is already owned, bumps the quantity instead of
+// Adds a card to the logged-in user's collection. If the same card
+// is already owned, bumps the quantity instead of
 // creating a duplicate row.
 app.post("/api/collections", requireAuth, attachAppUser, async (req, res) => {
   const { game, card_id, card_name, quantity, condition, is_foil } = req.body;
@@ -152,7 +152,7 @@ app.post("/api/collections", requireAuth, attachAppUser, async (req, res) => {
   }
 });
 
-// Edits quantity/condition/foil on an owned card (FR-4). Scoped to the
+// Edits quantity/condition/foil on an owned card. Scoped to the
 // logged-in user so nobody can edit someone else's collection row.
 app.put("/api/collections/:id", requireAuth, attachAppUser, async (req, res) => {
   const { quantity, condition, is_foil } = req.body;
@@ -178,7 +178,7 @@ app.put("/api/collections/:id", requireAuth, attachAppUser, async (req, res) => 
   }
 });
 
-// Removes a card from the logged-in user's collection (FR-4).
+// Removes a card from the logged-in user's collection.
 app.delete("/api/collections/:id", requireAuth, attachAppUser, async (req, res) => {
   try {
     const result = await pool.query(
@@ -195,6 +195,168 @@ app.delete("/api/collections/:id", requireAuth, attachAppUser, async (req, res) 
   }
 });
 
+// Returns the logged-in user's decks.
+app.get("/api/decks/mine", requireAuth, attachAppUser, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM decks WHERE user_id = $1 ORDER BY created_at DESC",
+      [req.appUser.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Fetch decks failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// Creates a new deck.
+app.post("/api/decks", requireAuth, attachAppUser, async (req, res) => {
+  const { game, format, name } = req.body;
+
+  if (!game || !format || !name) {
+    return res.status(400).json({ status: "error", message: "game, format, and name are required" });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO decks (user_id, game, format, name) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.appUser.id, game, format, name]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error("Create deck failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// Returns one deck plus its cards. Scoped to the owner.
+app.get("/api/decks/:id", requireAuth, attachAppUser, async (req, res) => {
+  try {
+    const deckResult = await pool.query(
+      "SELECT * FROM decks WHERE id = $1 AND user_id = $2",
+      [req.params.id, req.appUser.id]
+    );
+    if (!deckResult.rows[0]) {
+      return res.status(404).json({ status: "error", message: "Deck not found" });
+    }
+
+    const cardsResult = await pool.query(
+      "SELECT * FROM deck_cards WHERE deck_id = $1 ORDER BY card_name",
+      [req.params.id]
+    );
+
+    res.json({ ...deckResult.rows[0], cards: cardsResult.rows });
+  } catch (err) {
+    console.error("Fetch deck failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// Deletes a deck and its deck_cards, via ON DELETE CASCADE. Scoped to owner.
+app.delete("/api/decks/:id", requireAuth, attachAppUser, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "DELETE FROM decks WHERE id = $1 AND user_id = $2 RETURNING id",
+      [req.params.id, req.appUser.id]
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ status: "error", message: "Deck not found" });
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error("Delete deck failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// Assigns a card to a deck. Ownership of the deck is checked first;
+// if the card's already in the deck, bumps quantity instead of duplicating.
+app.post("/api/decks/:id/cards", requireAuth, attachAppUser, async (req, res) => {
+  const { card_id, card_name, quantity } = req.body;
+
+  if (!card_id || !card_name) {
+    return res.status(400).json({ status: "error", message: "card_id and card_name are required" });
+  }
+
+  try {
+    const deckCheck = await pool.query(
+      "SELECT id FROM decks WHERE id = $1 AND user_id = $2",
+      [req.params.id, req.appUser.id]
+    );
+    if (!deckCheck.rows[0]) {
+      return res.status(404).json({ status: "error", message: "Deck not found" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO deck_cards (deck_id, card_id, card_name, quantity)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (deck_id, card_id) DO UPDATE SET quantity = deck_cards.quantity + EXCLUDED.quantity
+       RETURNING *`,
+      [req.params.id, card_id, card_name, quantity || 1]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error("Add card to deck failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// Removes a card from a deck. Ownership of the deck is checked first.
+app.delete("/api/decks/:id/cards/:cardId", requireAuth, attachAppUser, async (req, res) => {
+  try {
+    const deckCheck = await pool.query(
+      "SELECT id FROM decks WHERE id = $1 AND user_id = $2",
+      [req.params.id, req.appUser.id]
+    );
+    if (!deckCheck.rows[0]) {
+      return res.status(404).json({ status: "error", message: "Deck not found" });
+    }
+
+    await pool.query("DELETE FROM deck_cards WHERE deck_id = $1 AND card_id = $2", [
+      req.params.id,
+      req.params.cardId,
+    ]);
+    res.status(204).send();
+  } catch (err) {
+    console.error("Remove card from deck failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// Checks a deck's cards against the format_rules table.
+app.get("/api/decks/:id/legality", requireAuth, attachAppUser, async (req, res) => {
+  try {
+    const deckResult = await pool.query(
+      "SELECT * FROM decks WHERE id = $1 AND user_id = $2",
+      [req.params.id, req.appUser.id]
+    );
+    if (!deckResult.rows[0]) {
+      return res.status(404).json({ status: "error", message: "Deck not found" });
+    }
+    const deck = deckResult.rows[0];
+
+    const violations = await pool.query(
+      `SELECT dc.card_id, dc.card_name, dc.quantity, fr.status
+       FROM deck_cards dc
+       JOIN format_rules fr
+         ON fr.card_id = dc.card_id AND fr.game = $1 AND fr.format = $2
+       WHERE dc.deck_id = $3
+         AND (fr.status = 'banned' OR (fr.status = 'restricted' AND dc.quantity > 1))`,
+      [deck.game, deck.format, req.params.id]
+    );
+
+    res.json({
+      deckId: deck.id,
+      game: deck.game,
+      format: deck.format,
+      legal: violations.rows.length === 0,
+      violations: violations.rows,
+    });
+  } catch (err) {
+    console.error("Legality check failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
 app.listen(PORT, () => {
   console.log(`CollectTrack backend listening on port ${PORT}`);
 });
