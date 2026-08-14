@@ -4,6 +4,7 @@ import AuthForm from "./AuthForm";
 import CardSearch from "./CardSearch";
 import CollectionList from "./CollectionList";
 import DeckBuilder from "./DeckBuilder";
+import AdminConsole from "./AdminConsole";
 
 const API_BASE = "http://localhost:3001";
 
@@ -204,6 +205,8 @@ function Dashboard() {
       />
 
       <DeckBuilder decks={decks} onCreateDeck={handleCreateDeck} onDeleteDeck={handleDeleteDeck} />
+
+      {profile?.role === "admin" && <AdminConsole />}
     </div>
   );
 }

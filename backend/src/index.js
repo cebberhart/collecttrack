@@ -2,8 +2,8 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { pool } = require("./db");
-const { requireAuth, attachAppUser } = require("./authMiddleware");
-const { searchMtg, searchPokemon, searchYugioh } = require("./cardSearch");
+const { requireAuth, attachAppUser, requireAdmin } = require("./authMiddleware");
+const { searchMtg, searchPokemon, searchYugioh, getCatalogStatus } = require("./cardSearch");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -357,6 +357,134 @@ app.get("/api/decks/:id/legality", requireAuth, attachAppUser, async (req, res) 
     res.status(500).json({ status: "error", message: err.message });
   }
 });
+
+// ─── Admin routes (FR-8 through FR-12) ───
+// All routes below require requireAuth + attachAppUser + requireAdmin, in
+// that order; attachAppUser looks up the role, requireAdmin checks it.
+
+// FR-9: view all registered users
+app.get("/api/admin/users", requireAuth, attachAppUser, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, firebase_uid, email, display_name, role, created_at FROM users ORDER BY created_at DESC"
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Admin fetch users failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// FR-9: delete a user account. Cascades to their collections/decks via FK.
+app.delete("/api/admin/users/:id", requireAuth, attachAppUser, requireAdmin, async (req, res) => {
+  if (Number(req.params.id) === req.appUser.id) {
+    return res.status(400).json({ status: "error", message: "Cannot delete your own account" });
+  }
+  try {
+    const result = await pool.query("DELETE FROM users WHERE id = $1 RETURNING id", [req.params.id]);
+    if (!result.rows[0]) {
+      return res.status(404).json({ status: "error", message: "User not found" });
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error("Admin delete user failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// FR-10: view banned/restricted card lists, optionally filtered by game/format
+app.get("/api/admin/format-rules", requireAuth, attachAppUser, requireAdmin, async (req, res) => {
+  const { game, format } = req.query;
+  try {
+    let query = "SELECT * FROM format_rules";
+    const params = [];
+    if (game && format) {
+      params.push(game, format);
+      query += " WHERE game = $1 AND format = $2";
+    }
+    query += " ORDER BY game, format, card_name";
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Admin fetch format rules failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// FR-10: add or update a banned/restricted entry
+app.post("/api/admin/format-rules", requireAuth, attachAppUser, requireAdmin, async (req, res) => {
+  const { game, format, card_id, card_name, status } = req.body;
+
+  if (!game || !format || !card_id || !card_name || !status) {
+    return res
+      .status(400)
+      .json({ status: "error", message: "game, format, card_id, card_name, and status are required" });
+  }
+  if (!["banned", "restricted"].includes(status)) {
+    return res.status(400).json({ status: "error", message: "status must be 'banned' or 'restricted'" });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO format_rules (game, format, card_id, card_name, status)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (game, format, card_id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()
+       RETURNING *`,
+      [game, format, card_id, card_name, status]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error("Admin add format rule failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// FR-10: remove a banned/restricted entry
+app.delete("/api/admin/format-rules/:id", requireAuth, attachAppUser, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query("DELETE FROM format_rules WHERE id = $1 RETURNING id", [req.params.id]);
+    if (!result.rows[0]) {
+      return res.status(404).json({ status: "error", message: "Rule not found" });
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error("Admin delete format rule failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// FR-11: status of the external card-data cache (stands in for "catalog sync")
+app.get("/api/admin/catalog-status", requireAuth, attachAppUser, requireAdmin, (req, res) => {
+  res.json(getCatalogStatus());
+});
+
+// FR-12: site-wide metrics
+app.get("/api/admin/metrics", requireAuth, attachAppUser, requireAdmin, async (req, res) => {
+  try {
+    const [users, decks, collections, topCards] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM users"),
+      pool.query("SELECT COUNT(*) FROM decks"),
+      pool.query("SELECT COUNT(*) FROM collections"),
+      pool.query(
+        `SELECT card_name, game, SUM(quantity) AS total_owned
+         FROM collections
+         GROUP BY card_name, game
+         ORDER BY total_owned DESC
+         LIMIT 5`
+      ),
+    ]);
+    res.json({
+      totalUsers: Number(users.rows[0].count),
+      totalDecks: Number(decks.rows[0].count),
+      totalCollectionEntries: Number(collections.rows[0].count),
+      mostTrackedCards: topCards.rows,
+    });
+  } catch (err) {
+    console.error("Admin metrics failed:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`CollectTrack backend listening on port ${PORT}`);
 });

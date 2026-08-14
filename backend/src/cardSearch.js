@@ -5,6 +5,12 @@
 const cache = new Map();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+let lastFetchAt = null;
+
+function getCatalogStatus() {
+  return { cacheSize: cache.size, lastFetchAt };
+}
+
 function getCached(key) {
   const entry = cache.get(key);
   if (!entry) return null;
@@ -48,6 +54,7 @@ async function searchMtg(query) {
     imageUrl: card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || null,
   }));
 
+  lastFetchAt = new Date().toISOString();
   setCached(key, results);
   return results;
 }
@@ -78,6 +85,7 @@ async function searchPokemon(query) {
     imageUrl: card.images?.small || null,
   }));
 
+  lastFetchAt = new Date().toISOString();
   setCached(key, results);
   return results;
 }
@@ -109,8 +117,9 @@ async function searchYugioh(query) {
     imageUrl: card.card_images?.[0]?.image_url_small || null,
   }));
 
+  lastFetchAt = new Date().toISOString();
   setCached(key, results);
   return results;
 }
 
-module.exports = { searchMtg, searchPokemon, searchYugioh };
+module.exports = { searchMtg, searchPokemon, searchYugioh, getCatalogStatus };
