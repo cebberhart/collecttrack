@@ -65,4 +65,4 @@ collecttrack/
 - [x] Collection CRUD endpoints
 - [x] Deck builder UI
 - [x] Admin console routes
-- [ ] Deploy to Cloud Run + Firebase Hosting
+- [x] Deploy to Cloud Run + Firebase Hosting
