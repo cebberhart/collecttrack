@@ -6,7 +6,7 @@ import CollectionList from "./CollectionList";
 import DeckBuilder from "./DeckBuilder";
 import AdminConsole from "./AdminConsole";
 
-const API_BASE = "http://localhost:3001";
+const API_BASE = "https://collecttrack-backend-520125667460.us-central1.run.app";
 
 function Dashboard() {
   const { user, logout, getToken } = useAuth();
