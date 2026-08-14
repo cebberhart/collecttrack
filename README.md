@@ -52,9 +52,17 @@ collecttrack/
 - **deck_cards** — cards assigned to a deck
 - **format_rules** — admin-managed banned/restricted lists (FR-10)
 
+## Features implemented
+- **Auth** — Firebase email/password signup/login, backend token verification, role field (user/admin)
+- **Card search** — MTG (Scryfall), Pokémon (Pokémon TCG API), Yu-Gi-Oh! (YGOPRODeck), in-memory cached
+- **Collection** — add cards from search, adjust quantity, remove, scoped per user
+- **Decks** — create/delete decks, assign cards from collection, legality check against `format_rules`
+- **Admin console** (role-gated) — user management, format rules editor (search-driven, no manual ID entry), site metrics, catalog sync status
+
 ## Next steps
 - [x] Firebase Auth wiring
-- [ ] Card search endpoint (Scryfall / Pokémon TCG API)
-- [ ] Collection CRUD endpoints
-- [ ] Deck builder UI
-- [ ] Admin console routes
+- [x] Card search endpoint (Scryfall / Pokémon TCG API / YGOPRODeck)
+- [x] Collection CRUD endpoints
+- [x] Deck builder UI
+- [x] Admin console routes
+- [ ] Deploy to Cloud Run + Firebase Hosting
